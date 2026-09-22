@@ -165,6 +165,9 @@ func fetchMetrics() {
 
 		wg.Add(1)
 		go fetchEdgeErrorsByPathAnalytics(filteredZones, &wg)
+
+		wg.Add(1)
+		go fetchEdgeRequestsByPathAnalytics(filteredZones, &wg)
 	} else if zoneCount > cfgraphqlreqlimit {
 		for s := 0; s < zoneCount; s += cfgraphqlreqlimit {
 			e := s + cfgraphqlreqlimit
@@ -188,6 +191,9 @@ func fetchMetrics() {
 
 			wg.Add(1)
 			go fetchEdgeErrorsByPathAnalytics(filteredZones[s:e], &wg)
+
+			wg.Add(1)
+			go fetchEdgeRequestsByPathAnalytics(filteredZones[s:e], &wg)
 		}
 	}
 
@@ -319,6 +325,10 @@ func main() {
 	flags.Bool("enable_edge_errors_by_path", false, "enable edge errors by path metric (high cardinality)")
 	viper.BindEnv("enable_edge_errors_by_path")
 	viper.SetDefault("enable_edge_errors_by_path", false)
+
+	flags.Bool("enable_edge_requests_by_path", false, "enable edge requests by path metric, all HTTP statuses (high cardinality)")
+	viper.BindEnv("enable_edge_requests_by_path")
+	viper.SetDefault("enable_edge_requests_by_path", false)
 
 	flags.Bool("enable_account_usage_metrics", false, "enable account-level current calendar month HTTP data transfer metrics")
 	viper.BindEnv("enable_account_usage_metrics")

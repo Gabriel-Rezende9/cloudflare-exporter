@@ -66,6 +66,7 @@ const (
 	zoneRequestASNMetricName                        MetricName = "cloudflare_zone_requests_asn"
 	zoneBandwidthASNMetricName                      MetricName = "cloudflare_zone_bandwidth_asn"
 	zoneEdgeErrorsByPathMetricName                  MetricName = "cloudflare_zone_edge_errors_by_path"
+	zoneEdgeRequestsByPathMetricName                MetricName = "cloudflare_zone_edge_requests_by_path"
 	accountHTTPDataTransferMonthToDateMetricName    MetricName = "cloudflare_account_http_data_transfer_month_to_date_bytes"
 	accountHTTPDataTransferProjectedMonthMetricName MetricName = "cloudflare_account_http_data_transfer_projected_month_bytes"
 	accountHTTPDataTransferMonthElapsedMetricName   MetricName = "cloudflare_account_http_data_transfer_month_elapsed_seconds"
@@ -357,6 +358,11 @@ var (
 		Help: "Number of edge errors (4xx and 5xx) by request path",
 	}, []string{"zone", "account", "status", "host", "path"})
 
+	zoneEdgeRequestsByPath = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: zoneEdgeRequestsByPathMetricName.String(),
+		Help: "Number of edge requests (all HTTP statuses) by request path, entire zone (opt-in, high cardinality)",
+	}, []string{"zone", "account", "status", "host", "path"})
+
 	accountHTTPDataTransferMonthToDate = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: accountHTTPDataTransferMonthToDateMetricName.String(),
 		Help: "Account-level HTTP data transfer for the current calendar month to date in bytes",
@@ -425,6 +431,7 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(zoneRequestASNMetricName)
 	allMetricsSet.Add(zoneBandwidthASNMetricName)
 	allMetricsSet.Add(zoneEdgeErrorsByPathMetricName)
+	allMetricsSet.Add(zoneEdgeRequestsByPathMetricName)
 	allMetricsSet.Add(accountHTTPDataTransferMonthToDateMetricName)
 	allMetricsSet.Add(accountHTTPDataTransferProjectedMonthMetricName)
 	allMetricsSet.Add(accountHTTPDataTransferMonthElapsedMetricName)
@@ -583,6 +590,9 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	}
 	if !deniedMetrics.Has(zoneEdgeErrorsByPathMetricName) {
 		prometheus.MustRegister(zoneEdgeErrorsByPath)
+	}
+	if !deniedMetrics.Has(zoneEdgeRequestsByPathMetricName) {
+		prometheus.MustRegister(zoneEdgeRequestsByPath)
 	}
 	if !deniedMetrics.Has(accountHTTPDataTransferMonthToDateMetricName) {
 		prometheus.MustRegister(accountHTTPDataTransferMonthToDate)
@@ -1014,6 +1024,54 @@ func addEdgeErrorsByPath(z *zoneRespEdgeErrorsByPath, name string, account strin
 
 	for _, g := range z.HTTPRequestsAdaptiveGroups {
 		zoneEdgeErrorsByPath.With(
+			prometheus.Labels{
+				"zone":    name,
+				"account": account,
+				"status":  strconv.Itoa(int(g.Dimensions.EdgeResponseStatus)),
+				"host":    g.Dimensions.ClientRequestHTTPHost,
+				"path":    normalizePath(g.Dimensions.ClientRequestPath),
+			}).Add(float64(g.Count))
+	}
+}
+
+func fetchEdgeRequestsByPathAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	if !viper.GetBool("enable_edge_requests_by_path") {
+		return
+	}
+
+	if viper.GetBool("free_tier") {
+		return
+	}
+
+	zoneIDs := extractZoneIDs(zones)
+	if len(zoneIDs) == 0 {
+		return
+	}
+
+	r, err := fetchEdgeRequestsByPath(zoneIDs)
+	if err != nil {
+		log.Error("failed to fetch edge requests by path: ", err)
+		return
+	}
+
+	for _, z := range r.Viewer.Zones {
+		name, account := findZoneAccountName(zones, z.ZoneTag)
+		addEdgeRequestsByPath(&z, name, account)
+	}
+}
+
+func addEdgeRequestsByPath(z *zoneRespEdgeRequestsByPath, name string, account string) {
+	if len(z.HTTPRequestsAdaptiveGroups) == 0 {
+		return
+	}
+
+	label := prometheus.Labels{"zone": name, "account": account}
+	zoneEdgeRequestsByPath.DeletePartialMatch(label)
+
+	for _, g := range z.HTTPRequestsAdaptiveGroups {
+		zoneEdgeRequestsByPath.With(
 			prometheus.Labels{
 				"zone":    name,
 				"account": account,
