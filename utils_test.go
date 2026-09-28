@@ -17,6 +17,10 @@ func TestNormalizePath(t *testing.T) {
 		{"/items/5f3a2b1c9d", "/items/:id"},
 		{"/search?q=test&page=1", "/search"},
 		{"/api/v1/users/123?include=orders", "/api/v1/users/:id"},
+		{"/b2b/payment-collections/v2/reconciliation/", "/b2b/payment-collections/v2/reconciliation"},
+		{"/b2b//payment-collections", "/b2b/payment-collections"},
+		{"//", "/"},
+		{"/api/extract/", "/api/extract"},
 	}
 
 	for _, tt := range tests {
