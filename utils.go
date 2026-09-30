@@ -47,6 +47,16 @@ func normalizePath(path string) string {
 
 	path = strings.Split(path, "?")[0]
 
+	// Collapse duplicate slashes and drop a trailing slash so that
+	// "/foo", "/foo/" and "/foo//bar" don't become distinct series.
+	for strings.Contains(path, "//") {
+		path = strings.ReplaceAll(path, "//", "/")
+	}
+	path = strings.TrimSuffix(path, "/")
+	if path == "" {
+		return "/"
+	}
+
 	segments := strings.Split(path, "/")
 	for i, segment := range segments {
 		if segment == "" {
